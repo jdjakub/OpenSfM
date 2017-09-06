@@ -327,7 +327,7 @@ class DataSet:
 
     def __tracks_graph_file(self, filename=None):
         """Return path of tracks file"""
-        return os.path.join(self.data_path, filename or 'tracks.csv')
+        return os.path.join(self.data_path, filename or 'tracks.json')
 
     def load_tracks_graph(self, filename=None):
         """Return graph (networkx data structure) of tracks"""
@@ -488,12 +488,19 @@ def load_tracks_graph(fileobj):
 
 
 def save_tracks_graph(fileobj, graph):
+    obj = {}
     for node, data in graph.nodes(data=True):
         if data['bipartite'] == 0:
             image = node
+            obj[str(image)] = {}
             for track, data in graph[image].items():
                 x, y = data['feature']
                 fid = data['feature_id']
                 r, g, b = data['feature_color']
-                fileobj.write('%s\t%s\t%d\t%g\t%g\t%g\t%g\t%g\n' % (
-                    str(image), str(track), fid, x, y, r, g, b))
+
+                obj['track'] = str(track)
+                obj['feature_id'] = fid
+                obj['coords'] = [x, y]
+                obj['color'] = [r, g, b]
+
+    io.json_dump(obj, fileobj, false)
