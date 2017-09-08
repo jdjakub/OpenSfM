@@ -132,7 +132,15 @@
 
             void main()
             {
+                // projectorMat seems to be simply the transform for the current snapshot
+                // i.e. vector in snapshot space -> vector in world space i.e. model mat for shot
                 vRstq = projectorMat * vec4(position, 1.0);
+                // So vee-rest-queue or (htf it's supposed to read) is world-space vertex coord
+
+                // presumably, the 'model' part of modelViewMatrix is just projectorMat
+                // although it's never explicitly set by name so I can't tell >.>
+                // so maybe this following line just applies perspective and depth to vRstq
+                // giving the final vertex position in clip space or NDC space or wtf it is
                 gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
             }
 
@@ -152,6 +160,8 @@
             uniform float k2;
             uniform float scale_x;
             uniform float scale_y;
+
+            // So it's procedurally generating the tex coords.
 
             void main()
             {
@@ -237,14 +247,19 @@
             var f1;
             var container, camera, controls, scene, renderer;
             var mouse = new THREE.Vector2();
-            var hoverCamera, raycaster, parentTransform;
+            /* hoverCamera is set in render() to intersects[i].object, for some
+             * appropriate i that I haven't understood. So "hover camera" seems to have
+             * been referring to the mini-camera currently hovered over by the cursor,
+             * not the "hovering" camera that is used to fly around, as it may suggest.
+             * This was not obvious ... and took me several hours to find out. */
+            var hoverCamera, raycaster;
             var selectedCamera;
             var imagePlane, imagePlaneCamera;
             var imagePlaneOld, imagePlaneCameraOld;
             var scene_group, grid_group;
             var pointCloudMaterial;
             var reconstructions;
-            var reconstruction_visibles = [];
+            var tracks;
             var reconstruction_groups = [];
             var point_clouds = [];
             var camera_lines = [];
@@ -253,8 +268,6 @@
             var imagePlaneCameras = [];
             var imageMaterials = [];
             var num_preview_plane = 5;
-            var moveSpeed = 0.2;
-            var turnSpeed = 0.1;
             var previousShot = undefined;
             var validMoves;
             var movingMode = 'orbit';
@@ -315,7 +328,7 @@
                 f1.add(options, 'imagePlaneSize', 1, 200)
                     .onChange(function(value) {
                         options.imagePlaneSize *= 1.5;
-                        imagePlane.geometry = imagePlaneGeo(imagePlaneCameraOld.reconstruction, imagePlaneCameraOld.shot_id);
+                        imagePlaneOld.geometry = imagePlaneGeo(imagePlaneCameraOld.reconstruction, imagePlaneCameraOld.shot_id);
                         options.imagePlaneSize /= 1.5;
                         imagePlane.geometry = imagePlaneGeo(imagePlaneCamera.reconstruction, imagePlaneCamera.shot_id);
                         render();
@@ -506,11 +519,17 @@
                     } else {
                         reconstructions = data;
                     }
-                    $('#loading').remove();
-                    init();
-                    animate();
+                    jQuery.getJSON(urlParams.tracks, function(data) {
+                        tracks = data;
 
-                    invokeJourneyWrapper(function () { journeyWrapper.initialize(); });
+                        $('#loading').remove();
+                        init();
+                        animate();
+
+                        invokeJourneyWrapper(function () {
+                            journeyWrapper.initialize();
+                        });
+                    });
                 });
             }
 
@@ -622,7 +641,6 @@
             // Constructs the geometry for a specific shot's image
             function imagePlaneGeo(reconstruction, shot_id) {
                 var shot = reconstruction.shots[shot_id];
-                var cam = reconstruction.cameras[shot.camera];
 
                 if ('vertices' in shot) { // shot will contain a 'vertices' array in the meshed.json but not the .json
                     var geometry = new THREE.Geometry();
@@ -647,12 +665,29 @@
                     }
                     return geometry;
                 } else {
+                    var cam = reconstruction.cameras[shot.camera];
+
                     if (cam.projection_type == "spherical" || cam.projection_type == "equirectangular") {
                         return imageSphereGeoFlat(cam, shot);
                     } else {
                         return imagePlaneGeoFlat(cam, shot);
                     }
                 }
+            }
+
+            function trackGeo(reconstruction, shot_id) {
+                var shot = tracks[shot_id];
+
+                var geom = new THREE.Geometry();
+                for (var track_id in shot) { if (shot.hasOwnProperty(track_id)) {
+                        var track = shot[track_id];
+                        var pos = track.coords;
+                        geom.vertices.push(new THREE.Vector3(pos[0], pos[1], 0.));
+                        var c = track.color;
+                        geom.colors.push(new THREE.Vector3(c[0]/255., c[1]/255., c[2]/255.));
+                }}
+                return geom;
+
             }
 
             function imagePlaneGeoFlat(cam, shot) {
@@ -816,7 +851,7 @@
                             var p = reconstruction.points[point_id].coordinates;
                             var c = reconstruction.points[point_id].color;
                             var color = new THREE.Color();
-                            color.setRGB(c[0] / 255., c[1] / 255., c[2] / 255.)
+                            color.setRGB(c[0] / 255., c[1] / 255., c[2] / 255.);
                             points.vertices.push(new THREE.Vector3(p[0], p[1], p[2]));
                             points.colors.push(color);
                         }
@@ -867,6 +902,12 @@
                                                           imagePlaneCamera.shot_id),
                                             createImagePlaneMaterial(cam, shot, imagePlaneCamera.shot_id));
                 imagePlane.visible = options.showImagePlane;
+                //imageTracks = new THREE.PointCloud(trackGeo(imagePlaneCamera.reconstruction,
+                 //                                     imagePlaneCamera.shot_id),
+                  //                           new THREE.PointCloudMaterial({
+                   //                              size: options.pointSize, vertexColors: true
+                    //                         }));
+
 
                 imagePlaneCameraOld = camera_lines[0];
                 imagePlaneOld = new THREE.Mesh(imagePlaneGeo(imagePlaneCameraOld.reconstruction,
@@ -1013,7 +1054,7 @@
                 var cam = r.cameras[shot.camera];
 
                 if (previousShot !== cameraObject.shot_id) {
-                    previousShot = cameraObject.shot_id
+                    previousShot = cameraObject.shot_id;
                     var image_url = imageURL(shot_id);
                     if (selectedCamera !== cameraObject) {
                         setSelectedCamera(cameraObject);
@@ -1024,11 +1065,11 @@
                             imagePlaneCameraOld = imagePlaneCamera;
                             imagePlaneOld.material.uniforms.projectorTex.value = imagePlane.material.uniforms.projectorTex.value;
                             imagePlaneOld.material.uniforms.projectorMat.value = imagePlane.material.uniforms.projectorMat.value;
-                            imagePlane.material.uniforms.focal.value = imagePlane.material.uniforms.focal.value;
-                            imagePlane.material.uniforms.k1.value = imagePlane.material.uniforms.k1.value;
-                            imagePlane.material.uniforms.k2.value = imagePlane.material.uniforms.k2.value;
-                            imagePlane.material.uniforms.scale_x.value = imagePlane.material.uniforms.scale_x.value;
-                            imagePlane.material.uniforms.scale_y.value = imagePlane.material.uniforms.scale_y.value;
+                            imagePlaneOld.material.uniforms.focal.value = imagePlane.material.uniforms.focal.value;
+                            imagePlaneOld.material.uniforms.k1.value = imagePlane.material.uniforms.k1.value;
+                            imagePlaneOld.material.uniforms.k2.value = imagePlane.material.uniforms.k2.value;
+                            imagePlaneOld.material.uniforms.scale_x.value = imagePlane.material.uniforms.scale_x.value;
+                            imagePlaneOld.material.uniforms.scale_y.value = imagePlane.material.uniforms.scale_y.value;
                             imagePlaneOld.material.vertexShader = imagePlane.material.vertexShader;
                             imagePlaneOld.material.fragmentShader = imagePlane.material.fragmentShader;
                             imagePlaneOld.material.needsUpdate = true;
@@ -1063,6 +1104,16 @@
                 imagePlanes[id].geometry = imagePlaneGeo(r, shot_id);
                 imagePlanes[id].visible = true;
             }
+
+            // Very unclear. I gather:
+            // - If there is no hoverCamera or we're not walking, do nothing*
+            // - If hoverCamera isn't selected, select it. Otherwise, start walking.
+            // - Look through hoverCamera.
+            // - If we just started walking, navigate hoverCamera to the shot.
+            // * Render, whether we're walking or not.
+            // But don't render if there wasn't a hoverCamera to begin with.
+            // (I suspect rendering is only actually necessary if something changes
+            // which can only happen if we weren't walking. But whatever.
 
             function onDocumentMouseDown(event) {
                 window.focus();
