@@ -902,11 +902,12 @@
                                                           imagePlaneCamera.shot_id),
                                             createImagePlaneMaterial(cam, shot, imagePlaneCamera.shot_id));
                 imagePlane.visible = options.showImagePlane;
-                //imageTracks = new THREE.PointCloud(trackGeo(imagePlaneCamera.reconstruction,
-                 //                                     imagePlaneCamera.shot_id),
-                  //                           new THREE.PointCloudMaterial({
-                   //                              size: options.pointSize, vertexColors: true
-                    //                         }));
+                imageTracks = new THREE.PointCloud(trackGeo(imagePlaneCamera.reconstruction,
+                                                      imagePlaneCamera.shot_id),
+                                             new THREE.PointCloudMaterial({
+                                                 size: options.pointSize, vertexColors: true
+                                             }));
+                scene_group.add(imageTracks);
 
 
                 imagePlaneCameraOld = camera_lines[0];
