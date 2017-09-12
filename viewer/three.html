@@ -9,6 +9,7 @@
     </style>
 </head>
 <body>
+    <script src="js/jquery.js"></script>
     <script src="js/three.js"></script>
     <script src="js/OrbitControls.js"></script>
     <script src="js/TrackballControls.js"></script>
@@ -38,30 +39,39 @@
                 return 3 * cos(x / 2.0) * cos(y / 2.0);
             };
 
-            var rowMemo = {}; // Contains (part of) previous row that is still needed
-            for (var y = -10; y <= 10; y++) {
-                var colMemo = undefined;
-                for (var x = -10; x <= 10; x++) {
-                    var z = f(x, y);
-                    var vec = new THREE.Vector3(x, y, z);
+            for (var y = -10; y <= 10; y++) { for (var x = -10; x <= 10; x++) {
+                var z = f(x, y);
+                var vec = new THREE.Vector3(x, y, z);
+                geom.vertices.push(vec);
+            }}
 
-                    // Vertical line from prev row to this one
-                    if (typeof rowMemo[x] !== "undefined") {
-                        geom.vertices.push(rowMemo[x]);
-                        geom.vertices.push(vec);
-                    }
-                    rowMemo[x] = vec; // Update "prev" row
-                    // Horizontal line from prev col to this one
-                    if (typeof colMemo !== "undefined") {
-                        geom.vertices.push(colMemo);
-                        geom.vertices.push(vec);
-                    }
-                    colMemo = vec; // Update "prev" col
+            // At this point, there should be 21x21 vertices.
+            // from the POV of a vertex, neighbours are:
+            // -x: offset -1 in vertex array (so relative index -1)
+            // +x: offset +1
+            // -y: offset -21
+            // +y: offset +21
+
+            var uvs = geom.faceVertexUvs[0];
+
+            for (var y=0; y<20; y++) {
+                for (var x=0; x<20; x++) {
+                    var i = 21*y + x;
+                    geom.faces.push(new THREE.Face3(i, i+22, i+21)); // |/
+                    uvs.push([new THREE.Vector2(x/21., y/21.),
+                              new THREE.Vector2((x+1)/21., (y+1)/21.),
+                              new THREE.Vector2(x/21., (y+1)/21.)]);
+                    geom.faces.push(new THREE.Face3(i, i+1,  i+22)); //   /|
+                    uvs.push([new THREE.Vector2(x/21., y/21.),
+                              new THREE.Vector2((x+1)/21., y/21.),
+                              new THREE.Vector2((x+1)/21., (y+1)/21.)]);
                 }
             }
 
-            var material = new THREE.LineBasicMaterial({color: 0x00ff00});
-            var grid = new THREE.Line(geom, material, THREE.LinePieces);
+            var texture = THREE.ImageUtils.loadTexture("http://localhost:8000/data/dartmoor-small/1/images/00000000.jpg");
+
+            var material = new THREE.MeshBasicMaterial({map: texture});
+            var grid = new THREE.Mesh(geom, material);
             scene.add(grid);
         })();
 
