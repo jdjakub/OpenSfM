@@ -29,133 +29,142 @@
 
         // TODO: Simpler camera controls?
 
-        (function() {
-            // *** Wiggly function grid ***
-
-            var geom = new THREE.Geometry();
-
-            var f = function (x, y) {
-                var cos = Math.cos;
-                return 3 * cos(x / 2.0) * cos(y / 2.0);
-            };
-
-            for (var y = -10; y <= 10; y++) { for (var x = -10; x <= 10; x++) {
-                var z = f(x, y);
-                var vec = new THREE.Vector3(x, y, z);
-                geom.vertices.push(vec);
-            }}
-
-            // At this point, there should be 21x21 vertices.
-            // from the POV of a vertex, neighbours are:
-            // -x: offset -1 in vertex array (so relative index -1)
-            // +x: offset +1
-            // -y: offset -21
-            // +y: offset +21
-
-            var uvs = geom.faceVertexUvs[0];
-
-            for (var y=0; y<20; y++) {
-                for (var x=0; x<20; x++) {
-                    var i = 21*y + x;
-                    geom.faces.push(new THREE.Face3(i, i+22, i+21)); // |/
-                    uvs.push([new THREE.Vector2(x/21., y/21.),
-                              new THREE.Vector2((x+1)/21., (y+1)/21.),
-                              new THREE.Vector2(x/21., (y+1)/21.)]);
-                    geom.faces.push(new THREE.Face3(i, i+1,  i+22)); //   /|
-                    uvs.push([new THREE.Vector2(x/21., y/21.),
-                              new THREE.Vector2((x+1)/21., y/21.),
-                              new THREE.Vector2((x+1)/21., (y+1)/21.)]);
-                }
-            }
-
-            var texture = THREE.ImageUtils.loadTexture("http://localhost:8000/data/dartmoor-small/1/images/00000000.jpg");
-
-            var material = new THREE.MeshBasicMaterial({map: texture});
-            var grid = new THREE.Mesh(geom, material);
-            scene.add(grid);
-        })();
-
-        (function() {
-            // *** Swirly points ***
-
-            var pgeom = new THREE.Geometry();
-            for (var i = 0; i < 30; i++) {
-                var theta = i / 3.0;
-                var r = theta;
-                var x = r * Math.cos(theta);
-                var y = r * Math.sin(theta);
-                var z = 3;
-                var vec = new THREE.Vector3(x, y, z);
-                pgeom.vertices.push(vec);
-            }
-
-            var cloudMat = new THREE.PointCloudMaterial({size: 5, color: 0xffffff, sizeAttenuation: false});
-            var cloud = new THREE.PointCloud(pgeom, cloudMat);
-            scene.add(cloud);
-        })();
-
-        (function() {
-            // *** Axis and grid ***
-            var grid_group = new THREE.Object3D();
-
-            var N = 20;
-            var scale = 1;
-
-            // Axis
-            var axisgeo = new THREE.Geometry();
-            var extent = scale * N;
-            axisgeo.vertices = [
-                new THREE.Vector3(0, 0, 0),
-                new THREE.Vector3(extent, 0, 0), // x
-                new THREE.Vector3(0, 0, 0),
-                new THREE.Vector3(0, extent, 0), // y
-                new THREE.Vector3(0, 0, 0),
-                new THREE.Vector3(0, 0, extent) // z
-            ];
-            axisgeo.colors = [
-                new THREE.Color(0xff0000),
-                new THREE.Color(0xff0000),
-                new THREE.Color(0x00ff00),
-                new THREE.Color(0x00ff00),
-                new THREE.Color(0x0000ff),
-                new THREE.Color(0x0000ff)
-            ];
-            var lineMaterial = new THREE.LineBasicMaterial({
-                color: 0xffffff,
-                vertexColors: THREE.VertexColors
-            });
-            var line = new THREE.Line(axisgeo, lineMaterial, THREE.LinePieces);
-            grid_group.add(line);
-
-            // Grid
-            var linegeo = new THREE.Geometry();
-            // Picture this: x-axis goes left-to-right, y-axis bottom-to-top.
-            for (var i = 0; i < 2 * N; ++i) {
-                if (i !== N) {
-                    linegeo.vertices.push(
-                        // Vertical line
-                        new THREE.Vector3(scale * (i - N), scale * (-N), 0), // Bottom --
-                        new THREE.Vector3(scale * (i - N), scale * ( N), 0), //        -- to top
-                        // Horizontal line
-                        new THREE.Vector3(scale * (-N), scale * (i - N), 0), // Left --
-                        new THREE.Vector3(scale * ( N), scale * (i - N), 0)  //      -- to right
-                    );
-                }
-            }
-            var lineMaterial = new THREE.LineBasicMaterial({color: 0x555555});
-            var line = new THREE.Line(linegeo, lineMaterial, THREE.LinePieces);
-            grid_group.add(line);
-            scene.add(grid_group);
-        })();
-
-
-        var render = function() {
-            renderer.render(scene, camera);
+        var url = {
+            tracks: "http://localhost:8000/data/dartmoor-small/5/tracks.json",
+            image: "http://localhost:8000/data/dartmoor-small/5/images/",
+            reconstr: "http://localhost:8000/data/dartmoor-small/5/reconstruction.json"
         };
 
-        controls.addEventListener('change', render);
+        var snapshot;
+        var reconstr;
+        var dims;
 
-        render();
+        var scale = 10;
+
+        jQuery.when(jQuery.getJSON(url.tracks), jQuery.getJSON(url.reconstr)).done(function (tdata, rdata) {
+            // jQuery seems to wrap results in random guff
+            tdata = tdata[0]; rdata = rdata[0];
+            snapshot = { name: "00000000.jpg" };
+            snapshot.tracks = tdata[snapshot.name];
+
+            snapshot.texture = THREE.ImageUtils.loadTexture(url.image+snapshot.name);
+
+            reconstr = rdata[0];
+            for (var prop in reconstr.cameras) { if (reconstr.cameras.hasOwnProperty(prop) && typeof prop === "string") {
+                var cam = reconstr.cameras[prop];
+                dims = [cam.width, cam.height];
+                break; // Do the loop only once; use a **random camera** (usually there is only one, so ok...!)
+            }}
+
+            (function () {
+                // *** Image quad ***
+
+                var geom = new THREE.Geometry();
+
+                var aspect = dims[0] / dims[1];
+                var dy = 0.5, dx = aspect*dy;
+
+                geom.vertices.push(new THREE.Vector3(-dx, -dy, 0)); // bottom left
+                geom.vertices.push(new THREE.Vector3(-dx,  dy, 0)); // top left
+                geom.vertices.push(new THREE.Vector3( dx,  dy, 0)); // top right
+                geom.vertices.push(new THREE.Vector3( dx, -dy, 0)); // bottom right
+
+                geom.faces.push(new THREE.Face3(0,2,1));
+                geom.faces.push(new THREE.Face3(0,3,2));
+
+                geom.faceVertexUvs[0].push([new THREE.Vector2(0, 0), new THREE.Vector2(1, 1), new THREE.Vector2(0, 1)]);
+                geom.faceVertexUvs[0].push([new THREE.Vector2(0, 0), new THREE.Vector2(1, 0), new THREE.Vector2(1, 1)]);
+
+                var material = new THREE.MeshBasicMaterial({map: snapshot.texture});
+                var quad = new THREE.Mesh(geom, material);
+                scene.add(quad);
+
+                quad.position.copy(new THREE.Vector3(0, 0, 0));
+                quad.scale.multiplyScalar(10);
+
+                // *** Swirly points ***
+
+                var pgeom = new THREE.Geometry();
+                for (var track_id in snapshot.tracks) { if (snapshot.tracks.hasOwnProperty(track_id)) {
+                    var track = snapshot.tracks[track_id];
+                    var pos = track.coords;
+                    pgeom.vertices.push(new THREE.Vector3(pos[0], pos[1], 0));
+                    var col = track.color;
+                    pgeom.colors.push(new THREE.Color(col[0]/255., col[1]/255., col[2]/255.));
+                }}
+
+                var cloudMat = new THREE.PointCloudMaterial({size: 5, color: 0xffffff/*vertexColors: true*/, sizeAttenuation: false});
+                var cloud = new THREE.PointCloud(pgeom, cloudMat);
+                scene.add(cloud);
+
+                cloud.scale.set(1, -1, 1);
+                cloud.scale.multiplyScalar(aspect*10);
+                cloud.position.copy(new THREE.Vector3(0, 0, 0.01));
+            })();
+
+            (function () {
+                // *** Axis and grid ***
+                var grid_group = new THREE.Object3D();
+
+                var N = 20;
+                var scale = 1;
+
+                // Axis
+                var axisgeo = new THREE.Geometry();
+                var extent = scale * N;
+                axisgeo.vertices = [
+                    new THREE.Vector3(0, 0, 0),
+                    new THREE.Vector3(extent, 0, 0), // x
+                    new THREE.Vector3(0, 0, 0),
+                    new THREE.Vector3(0, extent, 0), // y
+                    new THREE.Vector3(0, 0, 0),
+                    new THREE.Vector3(0, 0, extent) // z
+                ];
+                axisgeo.colors = [
+                    new THREE.Color(0xff0000),
+                    new THREE.Color(0xff0000),
+                    new THREE.Color(0x00ff00),
+                    new THREE.Color(0x00ff00),
+                    new THREE.Color(0x0000ff),
+                    new THREE.Color(0x0000ff)
+                ];
+                var lineMaterial = new THREE.LineBasicMaterial({
+                    color: 0xffffff,
+                    vertexColors: THREE.VertexColors
+                });
+                var line = new THREE.Line(axisgeo, lineMaterial, THREE.LinePieces);
+                grid_group.add(line);
+
+                // Grid
+                var linegeo = new THREE.Geometry();
+                // Picture this: x-axis goes left-to-right, y-axis bottom-to-top.
+                for (var i = 0; i < 2 * N; ++i) {
+                    if (i !== N) {
+                        linegeo.vertices.push(
+                            // Vertical line
+                            new THREE.Vector3(scale * (i - N), scale * (-N), 0), // Bottom --
+                            new THREE.Vector3(scale * (i - N), scale * ( N), 0), //        -- to top
+                            // Horizontal line
+                            new THREE.Vector3(scale * (-N), scale * (i - N), 0), // Left --
+                            new THREE.Vector3(scale * ( N), scale * (i - N), 0)  //      -- to right
+                        );
+                    }
+                }
+                var lineMaterial = new THREE.LineBasicMaterial({color: 0x555555});
+                var line = new THREE.Line(linegeo, lineMaterial, THREE.LinePieces);
+                grid_group.add(line);
+                scene.add(grid_group);
+            })();
+
+
+            var render = function () {
+                renderer.render(scene, camera);
+            };
+
+            controls.addEventListener('change', render);
+
+            render();
+        });
     </script>
 </body>
 </html>
