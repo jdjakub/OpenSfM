@@ -4,30 +4,47 @@
     <meta charset="UTF-8">
     <title>Title</title>
     <style>
-			body { margin: 0; }
-			canvas { width: 100%; height: 100% }
+			body {
+                margin: 0px;
+            }
     </style>
 </head>
 <body>
+    <div id="ThreeJS" target="_blank"></div>
     <script src="js/jquery.js"></script>
     <script src="js/three.js"></script>
-    <script src="js/OrbitControls.js"></script>
-    <script src="js/TrackballControls.js"></script>
+    <script type="x-shader/x-vertex" id="feature_vsh">
+        uniform float pointSize;
+        varying vec3 v_color;
+        void main() {
+            v_color = color;
+            gl_PointSize = pointSize;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    </script>
+    <script type="x-shader/x-fragment" id="feature_fsh">
+        varying vec3 v_color;
+        void main() {
+            float radius = distance(gl_PointCoord, vec2(0.5))*2.0; // dist from point centre, now in [0,1)
+            if (radius < 0.8) {
+                gl_FragColor = vec4(v_color, 1.0);
+            } else if (radius <= 1.0) {
+                gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+            } else {
+                discard;
+            }
+        }
+    </script>
     <script>
         var scene = new THREE.Scene();
 
         var renderer = new THREE.WebGLRenderer();
-        renderer.setSize( window.innerWidth, window.innerHeight );
-        document.body.appendChild( renderer.domElement );
-
-        var camera = new THREE.PerspectiveCamera( 75, window.innerWidth/window.innerHeight, 0.1, 1000 );
-        camera.position.x = 50;
-        camera.position.y = 50;
-        camera.position.z = 50;
-        camera.up = new THREE.Vector3(0, 0, 1);
-        var controls = new THREE.OrbitControls(camera, renderer.domElement);
-
-        // TODO: Simpler camera controls?
+        var width = window.innerWidth;
+        var height = window.innerHeight;
+        var wndAspect = width / height;
+        renderer.setSize( width, height );
+        var container = document.getElementById("ThreeJS");
+        container.appendChild(renderer.domElement);
 
         var url = {
             tracks: "http://localhost:8000/data/dartmoor-small/5/tracks.json",
@@ -35,11 +52,70 @@
             reconstr: "http://localhost:8000/data/dartmoor-small/5/reconstruction.json"
         };
 
-        var snapshot;
+        var snapshot; // = { name: 001.jpg, tracks: { 102: { ... }, 67: { ... }, ... } }
         var reconstr;
         var dims;
 
         var scale = 10;
+
+        // Initialises geometry.
+        // dataSource contains .nextTrack() which returns an object like
+        // { coords: [x, y], color: [100, 200, 255] /* r,g,b */ }
+        // or "done" when finished
+        var FeatureCloud = function(dataSource) {
+            var pointGeom = new THREE.Geometry();
+            var track = dataSource.nextTrack();
+            var z = 0.0;
+            while (track !== "done") {
+                var pos = track.coords;
+                pointGeom.vertices.push(new THREE.Vector3(pos[0], pos[1], z*0.00001));
+                var col = track.color;
+                pointGeom.colors.push(new THREE.Color(col[0] / 255., col[1] / 255., col[2] / 255.));
+
+                track = dataSource.nextTrack();
+                z++;
+            }
+            if (FeatureCloud.prototype.material === undefined) {
+                FeatureCloud.prototype.material = new THREE.ShaderMaterial({
+                    vertexColors: THREE.VertexColors,
+                    side: THREE.DoubleSide,
+                    uniforms: {
+                        pointSize: {type: 'f', value: 20.0},
+                    },
+                    vertexShader: $("#feature_vsh").text(),
+                    fragmentShader: $("#feature_fsh").text(),
+                });
+            }
+
+            this.threeObject = new THREE.PointCloud(pointGeom, FeatureCloud.prototype.material);
+
+        };
+        FeatureCloud.prototype = {};
+
+        var ImageQuad = function(aspect, texture) {
+            var geom = ImageQuad.prototype.geom;
+            if (geom === undefined) {
+                geom = new THREE.Geometry();
+                ImageQuad.prototype.geom = geom;
+
+                var dy = 0.5, dx = aspect * dy;
+
+                geom.vertices.push(new THREE.Vector3(-dx, -dy, 0)); // bottom left
+                geom.vertices.push(new THREE.Vector3(-dx, dy, 0)); // top left
+                geom.vertices.push(new THREE.Vector3(dx, dy, 0)); // top right
+                geom.vertices.push(new THREE.Vector3(dx, -dy, 0)); // bottom right
+
+                geom.faces.push(new THREE.Face3(0, 2, 1));
+                geom.faces.push(new THREE.Face3(0, 3, 2));
+
+                geom.faceVertexUvs[0].push([new THREE.Vector2(0, 0), new THREE.Vector2(1, 1), new THREE.Vector2(0, 1)]);
+                geom.faceVertexUvs[0].push([new THREE.Vector2(0, 0), new THREE.Vector2(1, 0), new THREE.Vector2(1, 1)]);
+            }
+            var mat = new THREE.MeshBasicMaterial({ map: texture });
+
+            this.threeObject = new THREE.Mesh(geom, mat);
+        };
+        ImageQuad.prototype = {};
 
         jQuery.when(jQuery.getJSON(url.tracks), jQuery.getJSON(url.reconstr)).done(function (tdata, rdata) {
             // jQuery seems to wrap results in random guff
@@ -56,53 +132,85 @@
                 break; // Do the loop only once; use a **random camera** (usually there is only one, so ok...!)
             }}
 
+            var aspect = dims[0] / dims[1];
+
             (function () {
                 // *** Image quad ***
 
-                var geom = new THREE.Geometry();
+                var quad = new ImageQuad(aspect, snapshot.texture);
+                var threeQuad = quad.threeObject;
+                scene.add(threeQuad);
 
-                var aspect = dims[0] / dims[1];
-                var dy = 0.5, dx = aspect*dy;
-
-                geom.vertices.push(new THREE.Vector3(-dx, -dy, 0)); // bottom left
-                geom.vertices.push(new THREE.Vector3(-dx,  dy, 0)); // top left
-                geom.vertices.push(new THREE.Vector3( dx,  dy, 0)); // top right
-                geom.vertices.push(new THREE.Vector3( dx, -dy, 0)); // bottom right
-
-                geom.faces.push(new THREE.Face3(0,2,1));
-                geom.faces.push(new THREE.Face3(0,3,2));
-
-                geom.faceVertexUvs[0].push([new THREE.Vector2(0, 0), new THREE.Vector2(1, 1), new THREE.Vector2(0, 1)]);
-                geom.faceVertexUvs[0].push([new THREE.Vector2(0, 0), new THREE.Vector2(1, 0), new THREE.Vector2(1, 1)]);
-
-                var material = new THREE.MeshBasicMaterial({map: snapshot.texture});
-                var quad = new THREE.Mesh(geom, material);
-                scene.add(quad);
-
-                quad.position.copy(new THREE.Vector3(0, 0, 0));
-                quad.scale.multiplyScalar(10);
+                threeQuad.position.copy(new THREE.Vector3(0, 0, -0.01));
+                threeQuad.scale.multiplyScalar(10);
 
                 // *** Swirly points ***
 
-                var pgeom = new THREE.Geometry();
-                for (var track_id in snapshot.tracks) { if (snapshot.tracks.hasOwnProperty(track_id)) {
-                    var track = snapshot.tracks[track_id];
-                    var pos = track.coords;
-                    pgeom.vertices.push(new THREE.Vector3(pos[0], pos[1], 0));
-                    var col = track.color;
-                    pgeom.colors.push(new THREE.Color(col[0]/255., col[1]/255., col[2]/255.));
-                }}
+                var featureCloud = new FeatureCloud({ // iterate through snapshot.tracks
+                    keys: Object.keys(snapshot.tracks), i: 0, nextTrack: function() {
+                        if (this.i < this.keys.length) {
+                            var key = this.keys[this.i];
+                            this.i++;
+                            return snapshot.tracks[key];
+                        } else {
+                            return "done";
+                        }
+                    }
+                });
 
-                var cloudMat = new THREE.PointCloudMaterial({size: 5, color: 0xffffff/*vertexColors: true*/, sizeAttenuation: false});
-                var cloud = new THREE.PointCloud(pgeom, cloudMat);
-                scene.add(cloud);
-
-                cloud.scale.set(1, -1, 1);
-                cloud.scale.multiplyScalar(aspect*10);
-                cloud.position.copy(new THREE.Vector3(0, 0, 0.01));
+                featureCloud.threeObject.scale.set(1, -1, 1).multiplyScalar(aspect*10);
+                featureCloud.threeObject.position.copy(new THREE.Vector3(0, 0, 0.01));
+                scene.add(featureCloud.threeObject);
             })();
 
-            (function () {
+            // Fit camera to image, while keeping window aspect ratio
+            var camWidth = 10*aspect, camHeight = 10; // image width, image height
+
+            if (camWidth >= camHeight) {
+                camHeight = camWidth / wndAspect; // keep view as wide as image, and stretch vertically
+            } else {
+                camWidth = camHeight * wndAspect; // keep view as tall as image, and stretch horizontally
+            }
+
+            var camera = new THREE.OrthographicCamera(-camWidth/2, camWidth/2, camHeight/2, -camHeight/2, 0.1, 1000);
+            camera.position.z = 10;
+            camera.lookAt(new THREE.Vector3(0, 0, 0));
+            scene.add(camera);
+
+            var render = function () {
+                renderer.render(scene, camera);
+            };
+
+            var events = {
+                keyDown: function(event) {},
+                keyUp: function(event) {},
+                mouseDown: function(event) {},
+                mouseUp: function(event) {},
+                mouseMove: function(event) {},
+                mouseWheel: function(event) {
+                    event.preventDefault(); event.stopPropagation();
+
+                    var zoom = event.deltaY;
+                    if (zoom > 0) {
+                        zoom = 1.1;
+                    } else {
+                        zoom = 0.9;
+                    }
+                    camera.scale.multiplyScalar(zoom);
+                    render();
+                }
+            };
+            renderer.domElement.addEventListener("mousemove", events.mouseMove, false);
+            renderer.domElement.addEventListener("mousedown", events.mouseDown, false);
+            renderer.domElement.addEventListener("mouseup", events.mouseUp, false);
+            renderer.domElement.addEventListener("contextmenu", function ( event ) { event.preventDefault(); }, false );
+            renderer.domElement.addEventListener("mousewheel", events.mouseWheel, false );
+            renderer.domElement.addEventListener("keyup", events.keyUp, false );
+            renderer.domElement.addEventListener("keydown", events.keyDown, false );
+
+            // TODO: Simpler + more appropriate camera controls
+
+            /*(function () {
                 // *** Axis and grid ***
                 var grid_group = new THREE.Object3D();
 
@@ -154,14 +262,7 @@
                 var line = new THREE.Line(linegeo, lineMaterial, THREE.LinePieces);
                 grid_group.add(line);
                 scene.add(grid_group);
-            })();
-
-
-            var render = function () {
-                renderer.render(scene, camera);
-            };
-
-            controls.addEventListener('change', render);
+            })();*/
 
             render();
         });
