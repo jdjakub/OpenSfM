@@ -52,6 +52,43 @@
             reconstr: "http://localhost:8000/data/dartmoor-small/5/reconstruction.json"
         };
 
+        var sequence = [];
+
+        var Snapshot = function() {
+
+        };
+
+        var tracksToArray = function(tracks) {
+            var arr = [];
+            for (var tid in Object.keys(tracks)) {
+                var obj = tracks[tid];
+                obj.track_id = tid; // Transfer to obj
+                arr.push(obj);
+            }
+            arr.sort(function(t1, t2) {
+                return t1.track_id - t2.track_id;
+            });
+            return arr;
+        };
+
+        var intersectTrackArrays = function(t1, t2) { // identify elements that occur in both arrays; mark in t1
+            var i1 = 0; // points to what we are currently considering within t1
+            var i2 = 0; // likewise for t2
+
+
+            var obj1 = t1[i1], obj2 = t2[i2];
+            if (obj1.track_id === obj2.track_id) {
+                t1.twin = t2;
+                i1++;
+            } else if (obj1.track_id < obj2.track_id) {
+                if (i1 === t1.length-1) break;
+                else i1++;
+            } else {
+                if (i2 === t2.length-1) break;
+                else i2++;
+            }
+        };
+
         var snapshot; // = { name: 001.jpg, tracks: { 102: { ... }, 67: { ... }, ... } }
         var reconstr;
         var dims;
