@@ -110,7 +110,6 @@
         };
 
         var reconstr;
-        var dims;
 
         var scale = 10;
 
@@ -149,24 +148,21 @@
         FeatureCloud.prototype = {};
 
         var ImageQuad = function(aspect, texture) {
-            var geom = ImageQuad.prototype.geom;
-            if (geom === undefined) {
-                geom = new THREE.Geometry();
-                ImageQuad.prototype.geom = geom;
+            var geom = new THREE.Geometry();
 
-                var dy = 0.5, dx = aspect * dy;
+            var dy = 0.5, dx = aspect * dy;
 
-                geom.vertices.push(new THREE.Vector3(-dx, -dy, 0)); // bottom left
-                geom.vertices.push(new THREE.Vector3(-dx, dy, 0)); // top left
-                geom.vertices.push(new THREE.Vector3(dx, dy, 0)); // top right
-                geom.vertices.push(new THREE.Vector3(dx, -dy, 0)); // bottom right
+            geom.vertices.push(new THREE.Vector3(-dx, -dy, 0)); // bottom left
+            geom.vertices.push(new THREE.Vector3(-dx, dy, 0)); // top left
+            geom.vertices.push(new THREE.Vector3(dx, dy, 0)); // top right
+            geom.vertices.push(new THREE.Vector3(dx, -dy, 0)); // bottom right
 
-                geom.faces.push(new THREE.Face3(0, 2, 1));
-                geom.faces.push(new THREE.Face3(0, 3, 2));
+            geom.faces.push(new THREE.Face3(0, 2, 1));
+            geom.faces.push(new THREE.Face3(0, 3, 2));
 
-                geom.faceVertexUvs[0].push([new THREE.Vector2(0, 0), new THREE.Vector2(1, 1), new THREE.Vector2(0, 1)]);
-                geom.faceVertexUvs[0].push([new THREE.Vector2(0, 0), new THREE.Vector2(1, 0), new THREE.Vector2(1, 1)]);
-            }
+            geom.faceVertexUvs[0].push([new THREE.Vector2(0, 0), new THREE.Vector2(1, 1), new THREE.Vector2(0, 1)]);
+            geom.faceVertexUvs[0].push([new THREE.Vector2(0, 0), new THREE.Vector2(1, 0), new THREE.Vector2(1, 1)]);
+
             var mat = new THREE.MeshBasicMaterial({ map: texture });
 
             this.threeObject = new THREE.Mesh(geom, mat);
@@ -176,21 +172,29 @@
         jQuery.when(jQuery.getJSON(url.tracks), jQuery.getJSON(url.reconstr)).done(function (tdata, rdata) {
             // jQuery seems to wrap results in random guff
             tdata = tdata[0]; rdata = rdata[0];
-
+            // Pick reconstruction 0
             reconstr = rdata[0];
-            for (var prop in reconstr.cameras) { if (reconstr.cameras.hasOwnProperty(prop) && typeof prop === "string") {
-                var cam = reconstr.cameras[prop];
-                dims = [cam.width, cam.height];
-                break; // Do the loop only once; use a **random camera** (usually there is only one, so ok...!)
-            }}
 
             var sequence = [];
             var current = 0;
 
             var Snapshot = function(filename) {
-                this.filename = filename;
                 var tracks = tdata[filename];
-                this.features = new FeatureCloud({ // iterate through snapshot.tracks
+                var camera_name = reconstr.shots[filename].camera;
+                var camera = reconstr.cameras[camera_name];
+                var aspect = camera.width / camera.height;
+
+                var threeObject = new THREE.Object3D();
+
+                var texture = THREE.ImageUtils.loadTexture(url.image+filename);
+
+                var quad = new ImageQuad(aspect, texture);
+                threeObject.add(quad.threeObject);
+
+                quad.threeObject.position.copy(new THREE.Vector3(0, 0, -0.01));
+                quad.threeObject.scale.multiplyScalar(10);
+
+                var featureCloud = new FeatureCloud({ // iterate through snapshot.tracks
                     keys: Object.keys(tracks), i: 0, nextTrack: function() {
                         if (this.i < this.keys.length) {
                             var key = this.keys[this.i];
@@ -201,7 +205,11 @@
                         }
                     }
                 });
-                this.texture = THREE.ImageUtils.loadTexture(url.image+filename);
+
+                featureCloud.threeObject.scale.set(1, -1, 1).multiplyScalar(aspect*10);
+                featureCloud.threeObject.position.copy(new THREE.Vector3(0, 0, 0.01));
+                threeObject.add(featureCloud.threeObject);
+
                 this.tracks = tracksToArray(tracks);
 
                 sequence.push(this);
@@ -214,32 +222,17 @@
                     var deltaMat = new THREE.LineBasicMaterial({ color: 0x00ff00 });
                     this.deltaThreeObj = new THREE.Line(geom, deltaMat, THREE.LinePieces);
                 }
+
+                this.filename = filename;
+                this.aspect = aspect;
+                this.threeObject = threeObject;
             };
 
-            var aspect = dims[0] / dims[1];
-
-            var snapGroup = new THREE.Object3D();
-
-            var updateSnapshot = function(snapshot) {
-                var quad = new ImageQuad(aspect, snapshot.texture);
-                var threeQuad = quad.threeObject;
-                snapGroup.add(threeQuad);
-
-                threeQuad.position.copy(new THREE.Vector3(0, 0, -0.01));
-                threeQuad.scale.multiplyScalar(10);
-
-                var featureCloud = snapshot.features;
-
-                featureCloud.threeObject.scale.set(1, -1, 1).multiplyScalar(aspect*10);
-                featureCloud.threeObject.position.copy(new THREE.Vector3(0, 0, 0.01));
-                snapGroup.add(featureCloud.threeObject);
-            };
-
-            updateSnapshot(new Snapshot("00000000.jpg"));
-            scene.add(snapGroup);
+            var snap = new Snapshot("00000000.jpg");
+            scene.add(snap.threeObject);
 
             // Fit camera to image, while keeping window aspect ratio
-            var camWidth = 10*aspect, camHeight = 10; // image width, image height
+            var camWidth = 10*snap.aspect, camHeight = 10; // image width, image height
 
             if (camWidth >= camHeight) {
                 camHeight = camWidth / wndAspect; // keep view as wide as image, and stretch vertically
