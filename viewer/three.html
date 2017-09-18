@@ -52,19 +52,15 @@
             reconstr: "http://localhost:8000/data/dartmoor-small/5/reconstruction.json"
         };
 
-        var sequence = [];
-
-        var Snapshot = function() {
-
-        };
-
         // adds "track_id" field to each track, returns new array sorted smallest-to-largest track_id
         var tracksToArray = function(tracks) {
             var arr = [];
             for (var tid in Object.keys(tracks)) {
                 var obj = tracks[tid];
-                obj.track_id = tid; // Transfer to obj
-                arr.push(obj);
+                if (obj !== undefined) {
+                    obj.track_id = tid; // Transfer to obj
+                    arr.push(obj);
+                }
             }
             arr.sort(function(t1, t2) {
                 return t1.track_id - t2.track_id;
@@ -72,7 +68,7 @@
             return arr;
         };
 
-        // identify elements that occur in both arrays; marked in t1 as <track>.twin
+        // identify elements that occur in both arrays; marked in t2 as <track>.twin
         // algorithm assumes arrays have been sorted smallest-to-largest
         var intersectTrackArrays = function(t1, t2) {
             var i1 = 0; // points to what we are currently considering within t1
@@ -82,8 +78,8 @@
                 var obj1 = t1[i1], obj2 = t2[i2];
 
                 if (obj1.track_id === obj2.track_id) {
-                    t1.twin = t2; // mark
-                    i1++; // if did i2++ as well, would skip duplicates. not sure about that
+                    t2.twin = t1; // mark
+                    i1++; // if advanced i2++ as well, would skip duplicates. not sure about that
                 } else if (obj1.track_id < obj2.track_id) {
                     if (i1 === t1.length - 1) break; // because i2 is sorted, no chance of a further match
                     else i1++;
@@ -94,7 +90,25 @@
             }
         };
 
-        var snapshot; // = { name: 001.jpg, tracks: { 102: { ... }, 67: { ... }, ... } }
+        // Used from perspective of (member of tracks) "coming from" its twin.
+        // i.e. twin comes first, then step forward to (member of tracks). Draw delta from former to latter.
+        var calcDeltaGeom = function(tracks) {
+            var geom = new THREE.Geometry();
+
+            for (var i=0; i<tracks.length; i++) {
+                var track = tracks[i];
+                if (track.twin !== undefined) {
+                    var p1 = track.coords, p2 = track.twin.coords;
+                    var delta = [p2[0] - p1[0], p2[1] - p1[0]];
+
+                    geom.vertices.push(new THREE.Vector3(p1[0], p2[0], 0));
+                    geom.vertices.push(new THREE.Vector3(delta[0], delta[1], 0));
+                }
+            }
+
+            return geom;
+        };
+
         var reconstr;
         var dims;
 
@@ -162,10 +176,6 @@
         jQuery.when(jQuery.getJSON(url.tracks), jQuery.getJSON(url.reconstr)).done(function (tdata, rdata) {
             // jQuery seems to wrap results in random guff
             tdata = tdata[0]; rdata = rdata[0];
-            snapshot = { name: "00000000.jpg" };
-            snapshot.tracks = tdata[snapshot.name];
-
-            snapshot.texture = THREE.ImageUtils.loadTexture(url.image+snapshot.name);
 
             reconstr = rdata[0];
             for (var prop in reconstr.cameras) { if (reconstr.cameras.hasOwnProperty(prop) && typeof prop === "string") {
@@ -174,36 +184,59 @@
                 break; // Do the loop only once; use a **random camera** (usually there is only one, so ok...!)
             }}
 
-            var aspect = dims[0] / dims[1];
+            var sequence = [];
+            var current = 0;
 
-            (function () {
-                // *** Image quad ***
-
-                var quad = new ImageQuad(aspect, snapshot.texture);
-                var threeQuad = quad.threeObject;
-                scene.add(threeQuad);
-
-                threeQuad.position.copy(new THREE.Vector3(0, 0, -0.01));
-                threeQuad.scale.multiplyScalar(10);
-
-                // *** Swirly points ***
-
-                var featureCloud = new FeatureCloud({ // iterate through snapshot.tracks
-                    keys: Object.keys(snapshot.tracks), i: 0, nextTrack: function() {
+            var Snapshot = function(filename) {
+                this.filename = filename;
+                var tracks = tdata[filename];
+                this.features = new FeatureCloud({ // iterate through snapshot.tracks
+                    keys: Object.keys(tracks), i: 0, nextTrack: function() {
                         if (this.i < this.keys.length) {
                             var key = this.keys[this.i];
                             this.i++;
-                            return snapshot.tracks[key];
+                            return tracks[key];
                         } else {
                             return "done";
                         }
                     }
                 });
+                this.texture = THREE.ImageUtils.loadTexture(url.image+filename);
+                this.tracks = tracksToArray(tracks);
+
+                sequence.push(this);
+
+                if (sequence.length > 1) {
+                    var prev = sequence[sequence.length-2];
+                    intersectTrackArrays(prev.tracks, this.tracks);
+                    var geom = calcDeltaGeom(this.tracks);
+
+                    var deltaMat = new THREE.LineBasicMaterial({ color: 0x00ff00 });
+                    this.deltaThreeObj = new THREE.Line(geom, deltaMat, THREE.LinePieces);
+                }
+            };
+
+            var aspect = dims[0] / dims[1];
+
+            var snapGroup = new THREE.Object3D();
+
+            var updateSnapshot = function(snapshot) {
+                var quad = new ImageQuad(aspect, snapshot.texture);
+                var threeQuad = quad.threeObject;
+                snapGroup.add(threeQuad);
+
+                threeQuad.position.copy(new THREE.Vector3(0, 0, -0.01));
+                threeQuad.scale.multiplyScalar(10);
+
+                var featureCloud = snapshot.features;
 
                 featureCloud.threeObject.scale.set(1, -1, 1).multiplyScalar(aspect*10);
                 featureCloud.threeObject.position.copy(new THREE.Vector3(0, 0, 0.01));
-                scene.add(featureCloud.threeObject);
-            })();
+                snapGroup.add(featureCloud.threeObject);
+            };
+
+            updateSnapshot(new Snapshot("00000000.jpg"));
+            scene.add(snapGroup);
 
             // Fit camera to image, while keeping window aspect ratio
             var camWidth = 10*aspect, camHeight = 10; // image width, image height
