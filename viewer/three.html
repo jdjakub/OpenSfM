@@ -29,7 +29,7 @@
             if (radius < 0.8) {
                 gl_FragColor = vec4(v_color, 1.0);
             } else if (radius <= 1.0) {
-                gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+                gl_FragColor = vec4(1.0, 0.0, 0.0, 0.5);
             } else {
                 discard;
             }
@@ -133,7 +133,7 @@
                 FeatureCloud.prototype.material = new THREE.ShaderMaterial({
                     vertexColors: THREE.VertexColors,
                     side: THREE.DoubleSide,
-                    depthWrite: true,
+                    transparent: true,
                     uniforms: {
                         pointSize: {type: 'f', value: 20.0},
                     },
@@ -278,6 +278,33 @@
                 current = newSnap;
             };
 
+            var panning = false;
+            var raycaster = new THREE.Raycaster();
+            var velocity = new THREE.Vector3();
+            raycaster.precision = 0.01;
+
+            /*var prevStep;
+
+            var physicsStepPanning = function() {
+                var thisStep = Date.now();
+
+                if (prevStep !== undefined) {
+                    var deltaSec = (thisStep - prevStep) / 1000.0;
+
+                    var dv = velocity.clone().multiplyScalar(deltaSec);
+
+                    camera.position.add(dv); // x += v*dt
+
+                    velocity.multiplyScalar(0.99);
+                }
+                prevStep = thisStep;
+
+                if (velocity.length() > 0.001) {
+                    requestAnimationFrame(physicsStepPanning);
+                }
+                render();
+            };*/
+
             var events = {
                 keyDown: function(event) {
                     switch (event.key) {
@@ -291,9 +318,32 @@
                     render();
                 },
                 keyUp: function(event) {},
-                mouseDown: function(event) {},
-                mouseUp: function(event) {},
-                mouseMove: function(event) {},
+                mouseDown: function(event) {
+                    panning = true;
+                    prevStep = undefined;
+                },
+                mouseUp: function(event) {
+                    panning = false;
+                    /*prevStep = Date.now();
+                    requestAnimationFrame(physicsStepPanning);*/
+                },
+                mouseMove: function(event) {
+                    if (panning) {
+                        velocity.x = event.movementX; // Pixels left-to-right
+                        velocity.y = event.movementY; // Pixels top-to-bottom
+
+                        velocity.x /= width; // now, proportion of camera width, L2R
+                        velocity.y /= height; // now, proportion of camera height, T2B
+
+                        velocity.x *= -1; // now, velocity is in the direction I want the camera to move
+                        // i.e. mouse down -> camera up, mouse left -> camera right
+
+                        velocity.multiplyScalar(5); // empirically nice
+
+                        camera.position.add(velocity);
+                        render();
+                    }
+                },
                 mouseWheel: function(event) {
                     event.preventDefault(); event.stopPropagation();
 
@@ -304,6 +354,7 @@
                         zoom = 0.9;
                     }
                     camera.scale.multiplyScalar(zoom);
+
                     render();
                 }
             };
@@ -315,7 +366,7 @@
             window.addEventListener("keyup", events.keyUp, false );
             window.addEventListener("keydown", events.keyDown, true );
 
-            // TODO: Simpler + more appropriate camera controls
+            // TODO: Pan, zoom to cursor
 
             /*(function () {
                 // *** Axis and grid ***
