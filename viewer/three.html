@@ -12,7 +12,7 @@
 <body>
     <div id="ThreeJS" target="_blank"></div>
     <script src="js/jquery.js"></script>
-    <script src="js/three.js"></script>
+    <script src="js/three-old.js"></script>
     <script type="x-shader/x-vertex" id="feature_vsh">
     attribute vec4 outline;
 
@@ -43,6 +43,7 @@
         var scene = new THREE.Scene();
 
         var renderer = new THREE.WebGLRenderer();
+        renderer.sortObjects = false;
         var width = window.innerWidth * 0.99;
         var height = window.innerHeight * 0.99;
         var wndAspect = width / height;
@@ -137,7 +138,7 @@
         var FeatureCloud = function(dataSource) {
             var positions = [], colors = [], outlines = [];
             var track = dataSource.nextTrack();
-            var zMatch = 1.0, zBoring = 0.0;
+            var zMatch = 0, zBoring = 0;
             while (track !== "done") {
                 var pos = track.coords;
 
@@ -150,7 +151,7 @@
                     zBoring++;
                 } else {
                     outlines.push(1.0, 1.0, 0.0, 1.0);
-                    positions.push(pos[0], pos[1], zMatch*0.0001);
+                    positions.push(pos[0], pos[1], 1.0 + zMatch*0.0001);
                     zMatch++;
                 }
 
@@ -230,7 +231,7 @@
                 var quad = new ImageQuad(aspect, texture);
                 threeObject.add(quad.threeObject);
 
-                quad.threeObject.position.copy(new THREE.Vector3(0, 0, -0.01));
+                quad.threeObject.position.copy(new THREE.Vector3(0, 0, -1));
                 quad.threeObject.scale.multiplyScalar(10);
 
                 this.tracks = tracksToArray(tracks);
@@ -247,7 +248,7 @@
                     var delta = new THREE.Line(geom, deltaMat, THREE.LinePieces);
 
                     delta.scale.set(1, -1, 1).multiplyScalar(aspect*10);
-                    delta.position.copy(new THREE.Vector3(0, 0, 2));
+                    delta.position.copy(new THREE.Vector3(0, 0, 10));
                     threeObject.add(delta);
                 }
 
@@ -263,7 +264,7 @@
                     }
                 });
 
-                featureCloud.threeObject.scale.set(1, -1, 1).multiplyScalar(aspect*10);
+                featureCloud.threeObject.scale.set(aspect*10, -aspect*10, 1);
                 threeObject.add(featureCloud.threeObject);
 
                 this.filename = filename;
@@ -300,7 +301,7 @@
             }
 
             var camera = new THREE.OrthographicCamera(-camWidth/2, camWidth/2, camHeight/2, -camHeight/2, 0.1, 1000);
-            camera.position.z = 10;
+            camera.position.z = 50;
             camera.lookAt(new THREE.Vector3(0, 0, 0));
             scene.add(camera);
 
@@ -392,7 +393,7 @@
                     } else {
                         zoom = 0.9;
                     }
-                    camera.scale.multiplyScalar(zoom);
+                    camera.scale.multiply(new THREE.Vector3(zoom, zoom, 1));
 
                     render();
                 }
