@@ -14,26 +14,30 @@
     <script src="js/jquery.js"></script>
     <script src="js/three.js"></script>
     <script type="x-shader/x-vertex" id="feature_vsh">
-        uniform float pointSize;
-        varying vec3 v_color;
-        void main() {
-            v_color = color;
-            gl_PointSize = pointSize;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
+    attribute vec4 outline;
+
+    varying vec3 v_color;
+    varying vec4 v_outline;
+    void main() {
+        v_color = color;
+        v_outline = outline;
+        gl_PointSize = 20.0;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
     </script>
     <script type="x-shader/x-fragment" id="feature_fsh">
-        varying vec3 v_color;
-        void main() {
-            float radius = distance(gl_PointCoord, vec2(0.5))*2.0; // dist from point centre, now in [0,1)
-            if (radius < 0.8) {
-                gl_FragColor = vec4(v_color, 1.0);
-            } else if (radius <= 1.0) {
-                gl_FragColor = vec4(1.0, 0.0, 0.0, 0.5);
-            } else {
-                discard;
-            }
+    varying vec3 v_color;
+    varying vec4 v_outline;
+    void main() {
+        float radius = distance(gl_PointCoord, vec2(0.5))*2.0; // dist from point centre, now in [0,1)
+        if (radius < 0.8) {
+            gl_FragColor = vec4(v_color, v_outline.a);
+        } else if (radius <= 1.0) {
+            gl_FragColor = v_outline;
+        } else {
+            discard;
         }
+    }
     </script>
     <script>
         var scene = new THREE.Scene();
@@ -51,6 +55,20 @@
             image: "http://localhost:8000/data/dartmoor-small/5/images/",
             reconstr: "http://localhost:8000/data/dartmoor-small/5/reconstruction.json"
         };
+
+        var parseUrl = function() {
+            var match,
+                pl     = /\+/g,  // Regex for replacing addition symbol with a space
+                search = /([^&=]+)=?([^&]*)/g,
+                decode = function (s) { return decodeURIComponent(s.replace(pl, " ")); },
+                hash  = window.location.hash.substring(1);
+
+            url.params = {};
+            while (match = search.exec(hash))
+               urlParams[decode(match[1])] = decode(match[2]);
+        };
+
+        parseUrl();
 
         // adds "track_id" field to each track, returns new array sorted smallest-to-largest track_id
         var tracksToArray = function(tracks) {
@@ -117,32 +135,54 @@
         // { coords: [x, y], color: [100, 200, 255] /* r,g,b */ }
         // or "done" when finished
         var FeatureCloud = function(dataSource) {
-            var pointGeom = new THREE.Geometry();
+            var positions = [], colors = [], outlines = [];
             var track = dataSource.nextTrack();
-            var z = 0.0;
+            var zMatch = 1.0, zBoring = 0.0;
             while (track !== "done") {
                 var pos = track.coords;
-                pointGeom.vertices.push(new THREE.Vector3(pos[0], pos[1], z*0.00001));
-                var col = track.color;
-                pointGeom.colors.push(new THREE.Color(col[0] / 255., col[1] / 255., col[2] / 255.));
+
+                var color = track.color;
+                colors.push(color[0] / 255., color[1] / 255., color[2] / 255.);
+
+                if (track.twin === undefined) {
+                    outlines.push(0.0, 0.0, 0.0, 0.5);
+                    positions.push(pos[0], pos[1], zBoring*0.0001);
+                    zBoring++;
+                } else {
+                    outlines.push(1.0, 1.0, 0.0, 1.0);
+                    positions.push(pos[0], pos[1], zMatch*0.0001);
+                    zMatch++;
+                }
 
                 track = dataSource.nextTrack();
-                z++;
             }
+
+            var geom = new THREE.BufferGeometry(); // Needed for custom attributes, I think
+
+            positions   = new Float32Array(positions);
+            colors      = new Float32Array(colors);
+            outlines    = new Float32Array(outlines);
+
+            positions   = new THREE.BufferAttribute(positions   , 3);
+            colors      = new THREE.BufferAttribute(colors      , 3);
+            outlines    = new THREE.BufferAttribute(outlines    , 4);
+
+            geom.addAttribute("position", positions);
+            geom.addAttribute("color"   , colors);
+            geom.addAttribute("outline" , outlines);
+
             if (FeatureCloud.prototype.material === undefined) {
                 FeatureCloud.prototype.material = new THREE.ShaderMaterial({
+                    attributes: { "outline": {} },
                     vertexColors: THREE.VertexColors,
                     side: THREE.DoubleSide,
                     transparent: true,
-                    uniforms: {
-                        pointSize: {type: 'f', value: 20.0},
-                    },
                     vertexShader: $("#feature_vsh").text(),
                     fragmentShader: $("#feature_fsh").text(),
                 });
             }
 
-            this.threeObject = new THREE.PointCloud(pointGeom, FeatureCloud.prototype.material);
+            this.threeObject = new THREE.PointCloud(geom, FeatureCloud.prototype.material);
 
         };
         FeatureCloud.prototype = {};
@@ -193,7 +233,25 @@
                 quad.threeObject.position.copy(new THREE.Vector3(0, 0, -0.01));
                 quad.threeObject.scale.multiplyScalar(10);
 
-                var featureCloud = new FeatureCloud({ // iterate through tracks
+                this.tracks = tracksToArray(tracks);
+
+                if (Snapshot.prevCreated !== undefined) {
+                    var prev = Snapshot.prevCreated;
+                    this.prev = prev;
+                    prev.next = this;
+
+                    intersectTrackArrays(prev.tracks, this.tracks);
+                    var geom = calcDeltaGeom(this.tracks);
+
+                    var deltaMat = new THREE.LineBasicMaterial({ color: 0x00ffff });
+                    var delta = new THREE.Line(geom, deltaMat, THREE.LinePieces);
+
+                    delta.scale.set(1, -1, 1).multiplyScalar(aspect*10);
+                    delta.position.copy(new THREE.Vector3(0, 0, 2));
+                    threeObject.add(delta);
+                }
+
+                var featureCloud = new FeatureCloud({ // iterate through possibly twinned tracks
                     keys: Object.keys(tracks), i: 0, nextTrack: function() {
                         if (this.i < this.keys.length) {
                             var key = this.keys[this.i];
@@ -206,26 +264,7 @@
                 });
 
                 featureCloud.threeObject.scale.set(1, -1, 1).multiplyScalar(aspect*10);
-                //featureCloud.threeObject.position.copy(new THREE.Vector3(0, 0, 0));
                 threeObject.add(featureCloud.threeObject);
-
-                this.tracks = tracksToArray(tracks);
-
-                if (Snapshot.prevCreated !== undefined) {
-                    var prev = Snapshot.prevCreated;
-                    this.prev = prev;
-                    prev.next = this;
-
-                    intersectTrackArrays(prev.tracks, this.tracks);
-                    var geom = calcDeltaGeom(this.tracks);
-
-                    var deltaMat = new THREE.LineBasicMaterial({ color: 0x00ff00 });
-                    var delta = new THREE.Line(geom, deltaMat, THREE.LinePieces);
-
-                    delta.scale.set(1, -1, 1).multiplyScalar(aspect*10);
-                    delta.position.copy(new THREE.Vector3(0, 0, 2));
-                    threeObject.add(delta);
-                }
 
                 this.filename = filename;
                 this.aspect = aspect;
