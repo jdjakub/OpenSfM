@@ -143,14 +143,14 @@
         // dataSource contains .nextTrack() which returns an object like
         // { coords: [x, y], color: [100, 200, 255] /* r,g,b */ }
         // or "done" when finished
-        var FeatureCloud = function(dataSource) {
-            var positions = [], colors = [], outlines = [];
-            var track = dataSource.nextTrack();
-            var zMatch = 0, zBoring = 0;
-            while (track !== "done") {
-                var pos = track.coords;
+        function FeatureCloud(tracks) {
+            let positions = [], colors = [], outlines = [];
 
-                var color = track.color;
+            let zMatch = 0, zBoring = 0;
+            for (let track of tracks) {
+                let pos = track.coords;
+
+                let color = track.color;
                 colors.push(color[0] / 255., color[1] / 255., color[2] / 255.);
 
                 if (track.twin === undefined) {
@@ -162,11 +162,9 @@
                     positions.push(pos[0], pos[1], 1.0 + zMatch*0.0001);
                     zMatch++;
                 }
-
-                track = dataSource.nextTrack();
             }
 
-            var geom = new THREE.BufferGeometry(); // Needed for custom attributes, I think
+            let geom = new THREE.BufferGeometry(); // Needed for custom attributes, I think
 
             positions   = new Float32Array(positions);
             colors      = new Float32Array(colors);
@@ -218,7 +216,7 @@
         };
         ImageQuad.prototype = {};
 
-        jQuery.when(jQuery.getJSON(url.tracks), jQuery.getJSON(url.reconstr)).done(function (tdata, rdata) {
+        jQuery.when(jQuery.getJSON(url.tracks), jQuery.getJSON(url.reconstr)).done((tdata, rdata) => {
             // jQuery seems to wrap results in random guff
             tdata = tdata[0]; rdata = rdata[0];
             // Pick reconstruction 0
@@ -260,17 +258,9 @@
                     threeObject.add(delta);
                 }
 
-                var featureCloud = new FeatureCloud({ // iterate through possibly twinned tracks
-                    keys: Object.keys(tracks), i: 0, nextTrack: function() {
-                        if (this.i < this.keys.length) {
-                            var key = this.keys[this.i];
-                            this.i++;
-                            return tracks[key];
-                        } else {
-                            return "done";
-                        }
-                    }
-                });
+                var featureCloud = new FeatureCloud((function* () { // iterate through possibly twinned tracks
+                    for (let tid of Object.keys(tracks)) { yield tracks[tid]; }
+                })());
 
                 featureCloud.threeObject.scale.set(aspect*10, -aspect*10, 1);
                 threeObject.add(featureCloud.threeObject);
