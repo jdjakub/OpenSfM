@@ -74,7 +74,10 @@
         // adds "track_id" field to each track, returns new array sorted smallest-to-largest track_id
         var tracksToArray = function(tracks) {
             var arr = [];
-            for (var tid in Object.keys(tracks)) {
+            var tids = Object.keys(tracks);
+            for (var i in tids) {
+                var tid = tids[i];
+
                 var obj = tracks[tid];
                 if (obj !== undefined) {
                     obj.track_id = tid; // Transfer to obj
@@ -93,13 +96,18 @@
             var i1 = 0; // points to what we are currently considering within t1
             var i2 = 0; // likewise for t2
 
+            var matched = 0;
+
             while (i1 < t1.length && i2 < t2.length) {
                 var obj1 = t1[i1], obj2 = t2[i2];
 
-                if (obj1.track_id === obj2.track_id) {
+                var tid1 = +obj1.track_id, tid2 = +obj2.track_id; // convert to int, so comparisons don't screw up...
+
+                if (tid1 === tid2) {
                     obj2.twin = obj1; // mark
-                    i1++; // if advanced i2++ as well, would skip duplicates. not sure about that
-                } else if (obj1.track_id < obj2.track_id) {
+                    matched++;
+                    i2++; // if advanced i1++ as well, would skip duplicates. not sure about that
+                } else if (tid1 < tid2) {
                     if (i1 === t1.length - 1) break; // because i2 is sorted, no chance of a further match
                     else i1++;
                 } else {
@@ -146,7 +154,7 @@
                 colors.push(color[0] / 255., color[1] / 255., color[2] / 255.);
 
                 if (track.twin === undefined) {
-                    outlines.push(0.0, 0.0, 0.0, 0.5);
+                    outlines.push(0.0, 0.0, 0.0, 0.2);
                     positions.push(pos[0], pos[1], zBoring*0.0001);
                     zBoring++;
                 } else {
