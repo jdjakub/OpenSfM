@@ -29,14 +29,22 @@
     varying vec3 v_color;
     varying vec4 v_outline;
     void main() {
-        float radius = distance(gl_PointCoord, vec2(0.5))*2.0; // dist from point centre, now in [0,1)
-        if (radius < 0.8) {
-            gl_FragColor = vec4(v_color, v_outline.a);
-        } else if (radius <= 1.0) {
-            gl_FragColor = v_outline;
-        } else {
-            discard;
-        }
+        vec2 cxy = 2.0 * gl_PointCoord - 1.0;
+        float r2 = dot(cxy, cxy); // Quadrance of point coord from centre of point
+        vec2 df = vec2(dFdx(r2), dFdy(r2));
+        float delta = length(df);
+        float r_fill = 1.0 - 3.0*delta;        // radius of end of fill color (approx 3px from edge)
+        float r_fill_outline = r_fill + delta; // radius of beginning of outline (approx 2px)
+        float r_outline = 1.0-delta;           // radius of end of outline (approx 1px)
+        float r_outline_outside = 1.0;         // radius of beginning of exterior (edge)
+
+        // max is to prioritise outline color over edge color in limiting case.
+        // antialias transitions between fill and outline, outline and outside
+        float alpha_fill_outl = smoothstep(max(r_fill, 0.0), max(r_fill_outline, 0.0), r2);
+        float alpha_outl_outs = smoothstep(max(r_outline, 0.0), r_outline_outside, r2);
+        vec4 color = vec4(mix(v_color, v_outline.rgb, alpha_fill_outl), v_outline.a);
+        color.a = mix(color.a, 0.0, alpha_outl_outs);
+        gl_FragColor = color;
     }
     </script>
     <script>
@@ -54,8 +62,6 @@
             renderer.setPixelRatio(DPR);
             renderer.setSize(width, height);
         }
-
-        renderer.sortObjects = false;
 
         let wndAspect = width / height;
 
@@ -85,19 +91,11 @@
         // adds "track_id" field to each track, returns new array sorted smallest-to-largest track_id
         let tracksToArray = function(tracks) {
             let arr = [];
-            let tids = Object.keys(tracks);
-            for (let i in tids) {
-                let tid = tids[i];
-
-                let obj = tracks[tid];
-                if (obj !== undefined) {
-                    obj.track_id = tid; // Transfer to obj
-                    arr.push(obj);
-                }
+            for (let [tid, obj] of Object.entries(tracks)) {
+                obj.track_id = tid; // Transfer to obj
+                arr.push(obj);
             }
-            arr.sort(function(t1, t2) {
-                return t1.track_id - t2.track_id;
-            });
+            arr.sort( (t1, t2) => t1.track_id - t2.track_id );
             return arr;
         };
 
@@ -133,8 +131,7 @@
         let calcDeltaGeom = function(tracks) {
             let geom = new THREE.Geometry();
 
-            for (let i=0; i<tracks.length; i++) {
-                let track = tracks[i];
+            for (let track of tracks) {
                 if (track.twin !== undefined) {
                     let p1 = track.coords, p2 = track.twin.coords;
 
@@ -191,7 +188,7 @@
 
             if (FeatureCloud.prototype.material === undefined) {
                 FeatureCloud.prototype.material = new THREE.ShaderMaterial({
-                    //attributes: { "outline": {} },
+                    extensions: { derivatives: true },
                     vertexColors: THREE.VertexColors,
                     side: THREE.DoubleSide,
                     transparent: true,
