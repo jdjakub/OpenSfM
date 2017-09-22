@@ -74,7 +74,9 @@
             reconstr: "http://localhost:8000/data/dartmoor-small/5/reconstruction.json"
         };
 
-        let parseUrl = function() {
+        let startImage = 0;
+
+        (function() {
             let match,
                 pl     = /\+/g,  // Regex for replacing addition symbol with a space
                 search = /([^&=]+)=?([^&]*)/g,
@@ -83,10 +85,37 @@
 
             url.params = {};
             while (match = search.exec(hash))
-               urlParams[decode(match[1])] = decode(match[2]);
-        };
+               url.params[decode(match[1])] = decode(match[2]);
+        }) ();
 
-        parseUrl();
+        {
+            let dir = url.params["dir"];
+            if (dir) {
+                let prefix = "http://localhost:8000/" + dir;
+                url.tracks = prefix + "tracks.json";
+                url.image = prefix + "images/";
+                url.reconstr = prefix + "reconstruction.json";
+            }
+        }
+
+        /*let numToFilename;
+        {
+            let filename = url.params["start"];
+            let numDigits = 8;
+            let ext = ".jpg";
+
+            if (filename) {
+                let structure = /\D*(\d+)(\..+)/;
+                let matches = structure.exec(filename);
+                numDigits = matches[1].length;
+                ext = matches[2];
+            }
+
+            numToFilename = function(num) {
+                return num.toLocaleString("en", { minimumIntegerDigits: numDigits })+ext;
+            };
+
+        }*/
 
         // adds "track_id" field to each track, returns new array sorted smallest-to-largest track_id
         let tracksToArray = function(tracks) {
@@ -282,14 +311,14 @@
                 Snapshot.prevCreated = this;
             };
             Snapshot.namesMap = {};
-            Snapshot.byFileName = function(filename) {
+            Snapshot.byFilename = function(filename) {
                 return this.namesMap[filename];
             };
 
-            let namesInOrder = Object.keys(reconstr.shots).sort(function(n1, n2) {
+            let namesInOrder = Object.keys(reconstr.shots).sort((n1, n2) => {
                 n1 = +n1.substring(0, n1.length - 4); // no ".jpg", parse to int
                 n2 = +n2.substring(0, n2.length - 4); // ditto
-                return n1 - n2;
+                n1 - n2;
             });
 
             for (let i=0; i<namesInOrder.length; i++) { // Preload EVERYTHING!!
@@ -297,7 +326,7 @@
                 new Snapshot(name);
             }
 
-            let current = Snapshot.byFileName("00000000.jpg");
+            let current = Snapshot.byFilename(namesInOrder[0]);
             scene.add(current.threeObject);
 
             // Fit camera to image, while keeping window aspect ratio
@@ -415,7 +444,7 @@
             window.addEventListener("keyup", events.keyUp, false );
             window.addEventListener("keydown", events.keyDown, true );
 
-            // TODO: Pan, zoom to cursor
+            // TODO: Smooth pan, zoom to cursor
 
             /*(function () {
                 // *** Axis and grid ***
