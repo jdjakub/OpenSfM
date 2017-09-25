@@ -318,7 +318,7 @@
             let namesInOrder = Object.keys(reconstr.shots).sort((n1, n2) => {
                 n1 = +n1.substring(0, n1.length - 4); // no ".jpg", parse to int
                 n2 = +n2.substring(0, n2.length - 4); // ditto
-                n1 - n2;
+                return n1 - n2;
             });
 
             for (let i=0; i<namesInOrder.length; i++) { // Preload EVERYTHING!!
