@@ -86,11 +86,11 @@ def align_reconstruction_naive_similarity(reconstruction, gcp):
 
 
 def align_reconstruction_orientation_prior_similarity(reconstruction, config):
-    """Align with GPS data assuming particular a camera orientation.
+    """Align with GPS data assuming a particular camera orientation.
 
     In some cases, using 3D-3D matches directly fails to find proper
-    orientation of the world.  That happends mainly when all cameras lie
-    close to a straigh line.
+    orientation of the world.  That happens mainly when all cameras lie
+    close to a straight line.
 
     In such cases, we can impose a particular orientation of the cameras
     to improve the orientation of the alignment.  The config parameter
@@ -154,7 +154,7 @@ def align_reconstruction_orientation_prior_similarity(reconstruction, config):
 def get_horizontal_and_vertical_directions(R, orientation):
     """Get orientation vectors from camera rotation matrix and orientation tag.
 
-    Return a 3D vectors pointing to the positive XYZ directions of the image.
+    Return a 3D vector pointing to the positive XYZ directions of the image.
     X points to the right, Y to the bottom, Z to the front.
     """
     # See http://sylvana.net/jpegcrop/exif_orientation.html
