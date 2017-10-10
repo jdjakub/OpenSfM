@@ -45,7 +45,7 @@ def align_reconstruction_similarity(reconstruction, gcp, config):
 
     Config parameter `align_method` can be used to choose the alignment method.
     Accepted values are
-     - navie: does a direct 3D-3D fit
+     - naive: does a direct 3D-3D fit
      - orientation_prior: assumes a particular camera orientation
     """
     align_method = config.get('align_method', 'orientation_prior')
