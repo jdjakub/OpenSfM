@@ -1,0 +1,47 @@
+Incremental reconstruction
+==========================
+
+Obtain: image pairs with > 30% outliers (via OpenCV's findHomography() with RANSAC), sorted by number of common tracks. (compute_image_pairs)
+
+For each pair (img1, img2) remaining:
+	Initiate new reconstruction on pair. (bootstrap_reconstruction)
+	Grow reconstruction as applicable, taking from image list without replacement.
+
+Initiating a new reconstruction
+-------------------------------
+
+Obtain relative pose of camera 2 from camera 1's POV (two_view_reconstruction).
+
+If <= 5 inliers from this step, abort by returning early. Otherwise:
+
+Form the snapshot objects: shot1 with default pose, shot2 from established relative pose.
+
+Triangulate features in img1 and add them to the reconstruction.
+
+Provided more than five_point_algo_min_inliers (50) points were added:
+	Bundle adjust shot2.
+	Re-triangulate tracks.
+	Bundle adjust shot2 again.
+
+Initial "bootstrapped" reconstruction completed.
+
+two_view_reconstruction
+-----------------------
+
+Estimate relative pose via RANSAC on each camera's POV of its own points (pixel bearings). (OpenGV's relative_pose_ransac with "STEWENIUS")
+
+Use this pose estimate to triangulate the pixel bearings into two sets of 3D positions.
+
+Normalise the bearings, effectively projecting them back to the image planes.
+
+Considering both sets from the respective camera coordinate systems: compute distance between original bearings and re-projected ones.
+
+Remove outliers, defined as points with a reprojection error of at least five_point_algo_threshold (0.006).
+
+Run through OpenGV's relative_pose_optimize_nonlinear, yielding refined pose.
+
+Reproject, compare and filter outliers again.
+
+Return the number of inliers along with the relative pose of camera 2 wrt camera 1.
+
+
