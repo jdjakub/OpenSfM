@@ -5,7 +5,7 @@ Sequence does not have to be contiguous. Currently only 3-character file extensi
 
 Pass the relevant OpenSfM data directory in the #dir parameter.
 
-Directory must end in forward slash: data/lund/ instead of data/lund. Silly requirement but inertia permits it.
+Directory must end in forward slash: data/lund/ instead of data/lund. Silly requirement, but inertia permits it.
 
 Example usage: http://localhost:8000/viewer/matches.html#dir=data/berlin/
 
@@ -14,13 +14,19 @@ Initially, no image will appear, since the texture loads after the initial rende
 Controls:
 
 Scroll to zoom in/out of the *centre* of the world. Zoom-to-pointer not currently supported.
+
 Pan via left-click and drag. Use this to zoom to arbitrary points.
+Beware that pan is in world units, not camera units. Somewhat surgical precision is required when panning at high zoom levels, else it moves too fast.
+
 Navigate forwards in time (well, file number order) using up arrow key. Backwards using down arrow key.
 
-Features in the current image, that OpenSfM thinks also appeared in the previous one, are highlighted with yellow outlines.
-Their size is constant regardless of zoom level, as they are only associated with points in the OpenSfM output.
+Note: in what follows, "previous" means "previous in filename order", not "the most recent image you viewed", since you can move backward as well as forward.
 
-A blue line connects the feature with its previous position. It shows how much the feature "moved" from the previous image.
+Features in the current image, that OpenSfM thinks also appeared in the previous one, are highlighted with yellow outlines.
+Their size is constant regardless of zoom level, as they are only associated with points and colours in the OpenSfM output.
+They are filled with their associated feature colour, although this is easier to notice when significantly zoomed out.
+
+A blue line connects each matched feature with its previous position. It shows how much the feature moved from the previous image.
 
 Features that did *not* appear in the previous image have faint grey outlines.
 
