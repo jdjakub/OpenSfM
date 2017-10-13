@@ -1,3 +1,31 @@
+<!--
+Viewer for sequential matches in a chronologically numbered sequence of images e.g. 0000.jpg, 0001.jpg, 0002.jpg, ...
+
+Sequence does not have to be contiguous. Currently only 3-character file extension supported, though should be easy to improve.
+
+Pass the relevant OpenSfM data directory in the #dir parameter.
+
+Directory must end in forward slash: data/lund/ instead of data/lund. Silly requirement but inertia permits it.
+
+Example usage: http://localhost:8000/viewer/matches.html#dir=data/berlin/
+
+Initially, no image will appear, since the texture loads after the initial render. Doing things will update the view.
+
+Controls:
+
+Scroll to zoom in/out of the *centre* of the world. Zoom-to-pointer not currently supported.
+Pan via left-click and drag. Use this to zoom to arbitrary points.
+Navigate forwards in time (well, file number order) using up arrow key. Backwards using down arrow key.
+
+Features in the current image, that OpenSfM thinks also appeared in the previous one, are highlighted with yellow outlines.
+Their size is constant regardless of zoom level, as they are only associated with points in the OpenSfM output.
+
+A blue line connects the feature with its previous position. It shows how much the feature "moved" from the previous image.
+
+Features that did *not* appear in the previous image have faint grey outlines.
+
+-->
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -361,28 +389,6 @@
             let velocity = new THREE.Vector3();
             raycaster.precision = 0.01;
 
-            /*let prevStep;
-
-            let physicsStepPanning = function() {
-                let thisStep = Date.now();
-
-                if (prevStep !== undefined) {
-                    let deltaSec = (thisStep - prevStep) / 1000.0;
-
-                    let dv = velocity.clone().multiplyScalar(deltaSec);
-
-                    camera.position.add(dv); // x += v*dt
-
-                    velocity.multiplyScalar(0.99);
-                }
-                prevStep = thisStep;
-
-                if (velocity.length() > 0.001) {
-                    requestAnimationFrame(physicsStepPanning);
-                }
-                render();
-            };*/
-
             let events = {
                 keyDown: function(event) {
                     switch (event.key) {
@@ -445,60 +451,6 @@
             window.addEventListener("keydown", events.keyDown, true );
 
             // TODO: Smooth pan, zoom to cursor
-
-            /*(function () {
-                // *** Axis and grid ***
-                let grid_group = new THREE.Object3D();
-
-                let N = 20;
-                let scale = 1;
-
-                // Axis
-                let axisgeo = new THREE.Geometry();
-                let extent = scale * N;
-                axisgeo.vertices = [
-                    new THREE.Vector3(0, 0, 0),
-                    new THREE.Vector3(extent, 0, 0), // x
-                    new THREE.Vector3(0, 0, 0),
-                    new THREE.Vector3(0, extent, 0), // y
-                    new THREE.Vector3(0, 0, 0),
-                    new THREE.Vector3(0, 0, extent) // z
-                ];
-                axisgeo.colors = [
-                    new THREE.Color(0xff0000),
-                    new THREE.Color(0xff0000),
-                    new THREE.Color(0x00ff00),
-                    new THREE.Color(0x00ff00),
-                    new THREE.Color(0x0000ff),
-                    new THREE.Color(0x0000ff)
-                ];
-                let lineMaterial = new THREE.LineBasicMaterial({
-                    color: 0xffffff,
-                    vertexColors: THREE.VertexColors
-                });
-                let line = new THREE.Line(axisgeo, lineMaterial, THREE.LinePieces);
-                grid_group.add(line);
-
-                // Grid
-                let linegeo = new THREE.Geometry();
-                // Picture this: x-axis goes left-to-right, y-axis bottom-to-top.
-                for (let i = 0; i < 2 * N; ++i) {
-                    if (i !== N) {
-                        linegeo.vertices.push(
-                            // Vertical line
-                            new THREE.Vector3(scale * (i - N), scale * (-N), 0), // Bottom --
-                            new THREE.Vector3(scale * (i - N), scale * ( N), 0), //        -- to top
-                            // Horizontal line
-                            new THREE.Vector3(scale * (-N), scale * (i - N), 0), // Left --
-                            new THREE.Vector3(scale * ( N), scale * (i - N), 0)  //      -- to right
-                        );
-                    }
-                }
-                let lineMaterial = new THREE.LineBasicMaterial({color: 0x555555});
-                let line = new THREE.Line(linegeo, lineMaterial, THREE.LinePieces);
-                grid_group.add(line);
-                scene.add(grid_group);
-            })();*/
 
             render();
         });
