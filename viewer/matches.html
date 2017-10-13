@@ -211,9 +211,8 @@ Features that did *not* appear in the previous image have faint grey outlines.
         let scale = 10;
 
         // Initialises geometry.
-        // dataSource contains .nextTrack() which returns an object like
+        // input `tracks` contains objects like
         // { coords: [x, y], color: [100, 200, 255] /* r,g,b */ }
-        // or "done" when finished
         function FeatureCloud(tracks) {
             let positions = [], colors = [], outlines = [];
 
@@ -414,8 +413,6 @@ Features that did *not* appear in the previous image have faint grey outlines.
                 },
                 mouseUp: function(event) {
                     panning = false;
-                    /*prevStep = Date.now();
-                    requestAnimationFrame(physicsStepPanning);*/
                 },
                 mouseMove: function(event) {
                     if (panning) {
