@@ -505,14 +505,14 @@ def save_tracks_graph_json(fileobj, graph):
         if data['bipartite'] == 0:
             image = node
             obj2 = {}
-            obj[str(image)] = obj2
+            obj[image] = obj2
             for track, data in graph[image].items():
                 x, y = data['feature']
                 fid = data['feature_id']
                 r, g, b = data['feature_color']
 
                 obj3 = {}
-                obj2[str(track)] = obj3
+                obj2[track] = obj3
 
                 obj3['feature_id'] = fid
                 obj3['coords'] = [float(x), float(y)]

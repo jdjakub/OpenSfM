@@ -427,13 +427,14 @@ def run_relative_pose_optimize_nonlinear(b1, b2, t, R):
     return pyopengv.relative_pose_optimize_nonlinear(b1, b2, t, R)
 
 
-def two_view_reconstruction(p1, p2, camera1, camera2, threshold):
+def two_view_reconstruction(p1, p2, camera1, camera2, threshold, meta1, meta2):
     """Reconstruct two views from point correspondences.
 
     Args:
         p1, p2: lists points in the images
         camera1, camera2: Camera models
         threshold: reprojection error threshold
+        meta1, meta2: GPS data
 
     Returns:
         rotation, translation and inlier list
@@ -443,7 +444,7 @@ def two_view_reconstruction(p1, p2, camera1, camera2, threshold):
 
     # Note on threshold:
     # See opengv doc on thresholds here:
-    #   http://laurentkneip.github.io/opengv/page_how_to_use.html
+    # http://laurentkneip.github.io/opengv/page_how_to_use.html
     # Here we arbitrarily assume that the threshold is given for a camera of
     # focal length 1.  Also, arctan(threshold) \approx threshold since
     # threshold is small
@@ -451,6 +452,7 @@ def two_view_reconstruction(p1, p2, camera1, camera2, threshold):
         b1, b2, "STEWENIUS", 1 - np.cos(threshold), 1000)
     R = T[:, :3]
     t = T[:, 3]
+
     inliers = _two_view_reconstruction_inliers(b1, b2, R, t, threshold)
 
     T = run_relative_pose_optimize_nonlinear(b1[inliers], b2[inliers], t, R)
@@ -458,7 +460,43 @@ def two_view_reconstruction(p1, p2, camera1, camera2, threshold):
     t = T[:, 3]
     inliers = _two_view_reconstruction_inliers(b1, b2, R, t, threshold)
 
+    aR, t = custom_pose(meta1, meta2)
+    inliers = np.array([1]*20)
+
+    import pdb; pdb.set_trace()
+
     return cv2.Rodrigues(R.T)[0].ravel(), -R.T.dot(t), inliers
+
+
+def custom_pose(meta1, meta2):
+    # import pdb; pdb.set_trace()
+    """
+    # Need to rotate camera z-axis to be parallel with this direction.
+    # Must rotate around an axis perpendicular to both of them. Hope all signs are OK!
+    # i x j = k
+    # k x i = j.
+    # Therefore, (i x j) x i = j
+    # (u x v) 90-deg rotates u to v by crossing with u on the right
+    # I wish Geometric Algebra was more well-known...
+    # So, linear transformation is as follows:
+    # new z-axis is delta1to2
+    # new y-axis is downwards (according to OpenSfM docs, camera y-axis points down??)
+    # new x-axis is perp to both, and to the camera "right"
+    # Want same orientation?? as world coord system??
+    # So, x' x y' = z', i.e. x' = y' x z'"""
+    pos1 = meta1.gps_position
+    pos2 = meta2.gps_position
+
+    delta1to2 = np.subtract(pos2, pos1)
+    y_new = [0.0, -1.0, 0.0]
+    x_new = np.cross(y_new, delta1to2)
+    x_new /= np.linalg.norm(x_new)
+    delta1to2 /= np.linalg.norm(delta1to2)
+    R = np.array([x_new, y_new, delta1to2]).T
+    t = np.array(delta1to2)
+
+    t = np.array([0.0, 0.0, 1.0])  # test simple translate
+    return R, t
 
 
 def _two_view_rotation_inliers(b1, b2, R, threshold):
@@ -501,7 +539,9 @@ def bootstrap_reconstruction(data, graph, im1, im2, p1, p2):
 
     thresh = data.config.get('five_point_algo_threshold', 0.006)
     min_inliers = data.config.get('five_point_algo_min_inliers', 50)
-    R, t, inliers = two_view_reconstruction(p1, p2, camera1, camera2, thresh)
+    meta1 = get_image_metadata(data, im1)  # For GPS
+    meta2 = get_image_metadata(data, im2)
+    r, t, inliers = two_view_reconstruction(p1, p2, camera1, camera2, thresh, meta1, meta2)
     if len(inliers) > 5:
         logger.info("Two-view reconstruction inliers {}".format(len(inliers)))
         reconstruction = types.Reconstruction()
@@ -511,14 +551,14 @@ def bootstrap_reconstruction(data, graph, im1, im2, p1, p2):
         shot1.id = im1
         shot1.camera = cameras[str(d1['camera'])]
         shot1.pose = types.Pose()
-        shot1.metadata = get_image_metadata(data, im1)
+        shot1.metadata = meta1
         reconstruction.add_shot(shot1)
 
         shot2 = types.Shot()
         shot2.id = im2
         shot2.camera = cameras[str(d2['camera'])]
-        shot2.pose = types.Pose(R, t)
-        shot2.metadata = get_image_metadata(data, im2)
+        shot2.pose = types.Pose(r, t)
+        shot2.metadata = meta2
         reconstruction.add_shot(shot2)
 
         triangulate_shot_features(
@@ -532,7 +572,7 @@ def bootstrap_reconstruction(data, graph, im1, im2, p1, p2):
             bundle_single_view(graph, reconstruction, im2, data.config)
             return reconstruction
 
-    logger.info("Starting reconstruction with {} and {} failed")
+    logger.info("Starting reconstruction with {} and {} failed".format(im1, im2))
 
 
 def reconstructed_points_for_images(graph, reconstruction, images):
@@ -847,6 +887,8 @@ def grow_reconstruction(data, graph, reconstruction, images, gcp):
     should_bundle = ShouldBundle(data, reconstruction)
     should_retriangulate = ShouldRetriangulate(data, reconstruction)
 
+    last_shot = None
+
     while True:
         if data.config.get('save_partial_reconstructions', False):
             paint_reconstruction(data, graph, reconstruction)
@@ -864,6 +906,7 @@ def grow_reconstruction(data, graph, reconstruction, images, gcp):
             if resect(data, graph, reconstruction, image):
                 logger.info("Adding {0} to the reconstruction".format(image))
                 images.remove(image)
+                last_shot = reconstruction.shots[image]
 
                 triangulate_shot_features(
                     graph, reconstruction, image,
@@ -895,6 +938,11 @@ def grow_reconstruction(data, graph, reconstruction, images, gcp):
     bundle(graph, reconstruction, gcp, data.config)
     align.align_reconstruction(reconstruction, gcp, data.config)
     paint_reconstruction(data, graph, reconstruction)
+
+    """if last_shot is not None:
+        r = last_shot.pose.rotation
+        r += np.pi/2.0"""
+
     return reconstruction
 
 
