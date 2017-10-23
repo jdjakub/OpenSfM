@@ -19,3 +19,6 @@ data/berlin/*
 
 # Ignore virtualenv files
 env/*
+
+# Ignore PyCharm files
+.idea

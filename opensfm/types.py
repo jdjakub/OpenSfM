@@ -154,18 +154,18 @@ class PerspectiveCamera(Camera):
     """Define a perspective camera.
 
     Attributes:
-        widht (int): image width.
+        width (int): image width.
         height (int): image height.
-        focal (real): estimated focal lenght.
+        focal (real): estimated focal length.
         k1 (real): estimated first distortion parameter.
         k2 (real): estimated second distortion parameter.
-        focal_prior (real): prior focal lenght.
+        focal_prior (real): prior focal length.
         k1_prior (real): prior first distortion parameter.
         k2_prior (real): prior second distortion parameter.
     """
 
     def __init__(self):
-        """Defaut constructor."""
+        """Default constructor."""
         self.id = None
         self.projection_type = 'perspective'
         self.width = None
