@@ -17,6 +17,7 @@ from opensfm import geo
 from opensfm import matching
 from opensfm import multiview
 from opensfm import types
+from facing import make_first_camera_face_second
 
 
 logger = logging.getLogger(__name__)
@@ -463,8 +464,6 @@ def two_view_reconstruction(p1, p2, camera1, camera2, threshold, meta1, meta2):
     aR, t = custom_pose(meta1, meta2)
     inliers = np.array([1]*20)
 
-    import pdb; pdb.set_trace()
-
     return cv2.Rodrigues(R.T)[0].ravel(), -R.T.dot(t), inliers
 
 
@@ -561,15 +560,37 @@ def bootstrap_reconstruction(data, graph, im1, im2, p1, p2):
         shot2.metadata = meta2
         reconstruction.add_shot(shot2)
 
+        make_first_camera_face_second(shot1.pose, shot2.pose)
+
+        org2 = shot2.pose.get_origin()
+        shot2.pose.rotation = shot1.pose.rotation.copy()
+        shot2.pose.set_origin(org2)
+
+        data.save_reconstruction(
+            [reconstruction], 'reconstruction.first.json')
+
         triangulate_shot_features(
             graph, reconstruction, im1,
             data.config.get('triangulation_threshold', 0.004),
             data.config.get('triangulation_min_ray_angle', 2.0))
+
+        paint_reconstruction(data, graph, reconstruction)
+        data.save_reconstruction(
+            [reconstruction], 'reconstruction.tri.json')
+
         logger.info("Triangulated: {}".format(len(reconstruction.points)))
         if len(reconstruction.points) > min_inliers:
             bundle_single_view(graph, reconstruction, im2, data.config)
+            data.save_reconstruction(
+                [reconstruction], 'reconstruction.bundle1.json')
             retriangulate(graph, reconstruction, data.config)
+            paint_reconstruction(data, graph, reconstruction)
+            data.save_reconstruction(
+                [reconstruction], 'reconstruction.retri.json')
             bundle_single_view(graph, reconstruction, im2, data.config)
+            data.save_reconstruction(
+                [reconstruction], 'reconstruction.bundle2.json')
+
             return reconstruction
 
     logger.info("Starting reconstruction with {} and {} failed".format(im1, im2))
@@ -887,7 +908,6 @@ def grow_reconstruction(data, graph, reconstruction, images, gcp):
     should_bundle = ShouldBundle(data, reconstruction)
     should_retriangulate = ShouldRetriangulate(data, reconstruction)
 
-    last_shot = None
 
     while True:
         if data.config.get('save_partial_reconstructions', False):
@@ -906,7 +926,6 @@ def grow_reconstruction(data, graph, reconstruction, images, gcp):
             if resect(data, graph, reconstruction, image):
                 logger.info("Adding {0} to the reconstruction".format(image))
                 images.remove(image)
-                last_shot = reconstruction.shots[image]
 
                 triangulate_shot_features(
                     graph, reconstruction, image,
@@ -938,10 +957,6 @@ def grow_reconstruction(data, graph, reconstruction, images, gcp):
     bundle(graph, reconstruction, gcp, data.config)
     align.align_reconstruction(reconstruction, gcp, data.config)
     paint_reconstruction(data, graph, reconstruction)
-
-    """if last_shot is not None:
-        r = last_shot.pose.rotation
-        r += np.pi/2.0"""
 
     return reconstruction
 
